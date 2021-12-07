@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>俄罗斯小方块游戏</title>
+    <script src="./lodash.min.js"></script>
+    <!-- css样式 -->
+    <style>
+        .container {
+            width: 200px;
+            height: 360px;
+            background-color: darkseagreen;
+            position: relative;
+        }
+
+        .activity_model {
+            width: 20px;
+            height: 20px;
+            background-color: coral;
+            border: 0.3px solid #eee;
+            box-sizing: border-box;
+            /* 边框不会使整个元素再变大 */
+            position: absolute;
+        }
+
+        .fixed_model {
+            width: 20px;
+            height: 20px;
+            background-color: rgb(61, 182, 67);
+            border: 0.3px solid #eee;
+            box-sizing: border-box;
+            /* 边框不会使整个元素再变大 */
+            position: absolute;
+
+        }
+    </style>
+</head>
+
+<body onload="init()">
+    <!-- 背景容器 -->
+    <div id="container" class="container">
+        <!-- 块元素 -->
+    </div>
+</body>
+
+<script>
+    // 常量
+    // 每次移动的距离，步长
+    var STEP = 20;
+    // 分割容器，18行 10列
+    var ROW_COUNT = 18,
+        COL_COUNT = 10;
+    // 创建每个模型的数据源
+    var MODELS = [
+        // 0:L
+        {
+            0: { row: 2, col: 0 },
+            1: { row: 2, col: 1 },
+            2: { row: 2, col: 2 },
+            3: { row: 1, col: 2 }
+        },
+        // 1:凸
+        {
+            0: { row: 2, col: 2 },
+            1: { row: 1, col: 1 },
+            2: { row: 2, col: 1 },
+            3: { row: 3, col: 1 }
+        },
+        // 2:田
+        {
+            0: { row: 1, col: 1 },
+            1: { row: 2, col: 1 },
+            2: { row: 1, col: 2 },
+            3: { row: 2, col: 2 }
+        },
+        // 3:一
+        {
+            0: { row: 0, col: 0 },
+            1: { row: 0, col: 1 },
+            2: { row: 0, col: 2 },
+            3: { row: 0, col: 3 }
+        },
+        // 4:Z
+        {
+            0: { row: 1, col: 1 },
+            1: { row: 1, col: 2 },
+            2: { row: 2, col: 2 },
+            3: { row: 2, col: 3 }
+        },
+        // 5:反L
+        {
+            0: { row: 2, col: 3 },
+            1: { row: 2, col: 2 },
+            2: { row: 2, col: 1 },
+            3: { row: 1, col: 1 }
+        },
+        // 6:反Z
+        {
+            0: { row: 1, col: 2 },
+            1: { row: 1, col: 1 },
+            2: { row: 2, col: 1 },
+            3: { row: 2, col: 0 }
+        }
+    ]
+
+    // 变量
+    // 当前使用的数据源
+    var currentModel = {};
+    // 通过变量标记16宫格的位置
+    var currentX = 0,
+        currentY = 0;
+    var fixedBlocks = {};
+    // 定时器
+    var myInterval = null;
+
+    // 入口方法
+    function init() {
+        alert("准备开始了吗?");
+        createModel();
+        onKeyDown();
+    }
+    // 根据模型的数据源来创建对应的块元素
+    function createModel() {
+        // 
+        if(isGameOver()){
+            gameOver();
+        }
+        // 确定当前使用哪一个模型,lodash中的随机数方法
+        currentModel = MODELS[_.random(0, MODELS.length - 1)];
+        // 初始化16宫格的位置
+        currentX = 0;
+        currentY = 0;
+        // 生成对应数量的块元素
+        for (var key in currentModel) {
+            var divEle = document.createElement("div");
+            divEle.className = "activity_model";
+            document.getElementById("container").appendChild(divEle);
+        }
+        // 定位块元素位置
+        locationBlocks();
+        // 自动下落
+        autoDown();
+    }
+    // 根据数据源定位块元素的位置
+    function locationBlocks() {
+        // 控制越界行为
+        checkBound();
+        // 1.拿到所有的块元素
+        var eles = document.getElementsByClassName("activity_model");
+        for (var i = 0; i < eles.length; i++) {
+            // 单个块元素
+            var activityModelEle = eles[i];
+            // 2.找到每个块元素对应的数据，行 列
+            var blockModel = currentModel[i];
+            // 3.根据定义好的数据指定块元素的位置
+            activityModelEle.style.top = (blockModel.row + currentY) * STEP + "px";
+            activityModelEle.style.left = (blockModel.col + currentX) * STEP + "px";
+        }
+    }
+    // 监听用户键盘事件
+    function onKeyDown() {
+        document.onkeydown = function (event) {
+            switch (event.keyCode) {
+                case 38:
+                    // console.log("上");
+                    rotate();
+                    break;
+                case 39:
+                    // console.log("右");
+                    move(1, 0);
+                    break;
+                case 40:
+                    // console.log("下");
+                    move(0, 1);
+                    break;
+                case 37:
+                    // console.log("左");
+                    move(-1, 0);
+                    break;
+            }
+        }
+    }
+    // 移动
+    function move(x, y) {
+        // 碰撞判断
+        if (isMeet(currentX + x, currentY + y, currentModel)) {
+            if (y !== 0) {
+                // 底部发生了碰撞，固定块
+                fixedBottomModel();
+            }
+            return;
+        }
+        // 通过控制16宫格使移动
+        currentX += x;
+        currentY += y;
+        // 根据16宫格位置重新定位块元素
+        locationBlocks();
+    }
+    // 旋转
+    function rotate() {
+        // 算法，顺时针旋转
+        // 旋转后的行 = 旋转前的列
+        // 旋转后的列 = 3 - 旋转前的行
+
+        //克隆currentModel,lodash.js中的方法
+        var cloneCurrentModel = _.cloneDeep(currentModel);
+
+        // 遍历模型数据源
+        for (const key in cloneCurrentModel) {
+            // 块元素数据源
+            var blockModel = cloneCurrentModel[key];
+            // 数据更新
+            var temp = blockModel.row;
+            blockModel.row = blockModel.col;
+            blockModel.col = 3 - temp;
+        }
+        // 碰撞判断
+        if (isMeet(currentX, currentY, cloneCurrentModel)) {
+            return;
+        }
+        // 没有发生碰撞，接受变化
+        currentModel = cloneCurrentModel;
+
+        locationBlocks();
+    }
+    // 控制模型必须在容器中移动
+    function checkBound() {
+        // 定义模型活动边界
+        var leftBound = 0,
+            rightBound = COL_COUNT,
+            bottomBound = ROW_COUNT;
+        // 如果越界，后退一步
+        for (var key in currentModel) {
+            var blockModel = currentModel[key];
+            // left
+            if ((blockModel.col + currentX) < leftBound) {
+                currentX++;
+            }
+            // right
+            if ((blockModel.col + currentX) >= rightBound) {
+                currentX--;
+            }
+            // bottom
+            if ((blockModel.row + currentY) >= bottomBound) {
+                currentY--;
+                // 将模型固定在底部
+                fixedBottomModel();
+            }
+        }
+    }
+    // 把模型固定在底部
+    function fixedBottomModel() {
+        // 1.改变模型中块元素的样式
+        // 2.让模型不能再进行移动
+        var activityModelEles = document.getElementsByClassName("activity_model");
+        for (var i = activityModelEles.length - 1; i >= 0; i--) {
+            var activityModelEle = activityModelEles[i];
+            // 改块元素的类名
+            activityModelEle.className = "fixed_model";
+            // 
+            var blockModel = currentModel[i];
+            fixedBlocks[(currentY + blockModel.row) + "_" + (currentX + blockModel.col)] = activityModelEle;
+        }
+
+        // 有没有铺满的行
+        isRemoveLine();
+
+        // 3.生成新的块元素
+        createModel();
+    }
+    // 判断模型之间的碰撞问题
+    // X,Y表示16宫格【将要】移动到的位置
+    // model 表示当前模型数据源【将要】完成的变化
+    function isMeet(x, y, model) {
+        // 模型碰撞的原理
+        // 已经被占用的坐标，不允许有新的块占用
+        for (var k in model) {
+            var blockModel = model[k];
+            if (fixedBlocks[(y + blockModel.row) + "_" + (x + blockModel.col)]) {
+                return true;
+            }
+        }
+        return false;
+    }
+    // 判断一行是否铺满
+    function isRemoveLine() {
+        // 某一行的每一列都存在块元素，清理
+        // 1.遍历所有行
+        for (var i = 0; i < ROW_COUNT; i++) {
+            // 标记，假设铺满
+            var flag = true;
+            // 2.遍历当前行中的所有列
+            for (var j = 0; j < COL_COUNT; j++) {
+                // 试图找出一列没有铺块
+                if (!fixedBlocks[i + "_" + j]) {
+                    flag = false;
+                    break;
+                }
+            }
+            if (flag) {
+                // console.log(i + "行已经铺满");
+                // 清理该行
+                removeLine(i);
+            }
+        }
+    }
+    // 清除被铺满的行
+    function removeLine(line) {
+        // 遍历这一行
+        for (var i = 0; i < COL_COUNT; i++) {
+            // 1，删除行中的块元素
+            document.getElementById("container").removeChild(fixedBlocks[line + "_" + i]);
+            // 2.删除块元素的记录
+            fixedBlocks[line + "_" + i] = null;
+        }
+        // 下落补位
+        downLine(line);
+    }
+    // 下落填补清理的空位
+    function downLine(line) {
+        // 遍历
+        for (var i = line - 1; i >= 0; i--) {
+            for (var j = 0; j < COL_COUNT; j++) {
+                // 这一格空的，则直接跳过
+                if (!fixedBlocks[i + "_" + j]) continue;
+                // 1.其上一个块元素行数加一
+                fixedBlocks[(i + 1) + "_" + j] = fixedBlocks[i + "_" + j];
+                // 2.位置下落
+                fixedBlocks[(i + 1) + "_" + j].style.top = (i + 1) * STEP + "px";
+                // 3.清理本来的块元素
+                fixedBlocks[i + "_" + j] = null;
+            }
+        }
+    }
+    // 自动下落
+    function autoDown() {
+        if (myInterval) {
+            clearInterval(myInterval);
+        }
+        myInterval = setInterval(function () {
+            move(0, 1);
+        }, 1000)
+    }
+    // 判断游戏结束
+    function isGameOver() {
+        // 当第3行存在块元素的时候,游戏结束,因为要留出4行刷新块
+        for (var i = 0; i < COL_COUNT; i++) {
+            if (fixedBlocks["3_" + i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+    // 结束游戏
+    function gameOver(){
+        // 停止定时器
+        if(myInterval){
+            clearInterval(myInterval);
+        }
+        // 弹出对话框
+        alert("游戏结束!");
+    }
+</script>
+
+</html>
